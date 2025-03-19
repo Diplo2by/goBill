@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/joho/godotenv"
@@ -31,7 +33,7 @@ func main() {
 	app.Post("/api/analyze-bill", analyzeBillHandler)
 
 	log.Fatal(app.Listen(":8080"))
-
+	log.Printf("Server starting on port 8080...\n")
 }
 
 func analyzeBillHandler(c fiber.Ctx) error {
@@ -99,9 +101,9 @@ func analyzeBillHandler(c fiber.Ctx) error {
 }
 
 type BillAnalysisResponse struct {
-	Success bool                   `json:"success"`
-	Data    map[string]interface{} `json:"data,omitempty"`
-	Error   string                 `json:"error,omitempty"`
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
 }
 
 type GeminiRequest struct {
@@ -122,7 +124,17 @@ type InlineData struct {
 	Data     string `json:"data"`
 }
 
-func callGeminiApi(imageBytes, apiKey, mimeType string) (map[string]interface{}, error) {
+type GeminiResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+}
+
+func callGeminiApi(imageBytes, apiKey, mimeType string) (interface{}, error) {
 	requestBody := GeminiRequest{
 		Contents: []Content{
 			{
@@ -168,12 +180,47 @@ func callGeminiApi(imageBytes, apiKey, mimeType string) (map[string]interface{},
 		return nil, fmt.Errorf("gemini returned an error : %v", err)
 	}
 
-	var result map[string]interface{}
-	err = json.Unmarshal(respbody, &result)
+	var geminiResponse GeminiResponse
+	if err := json.Unmarshal(respbody, &geminiResponse); err != nil {
+		return nil, fmt.Errorf("error parsing Gemini response: %v", err)
+	}
+	if len(geminiResponse.Candidates) == 0 || len(geminiResponse.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("no valid response from Gemini")
+	}
+	responseText := geminiResponse.Candidates[0].Content.Parts[0].Text
+	jsonData, err = extractJSONFromText(responseText)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing response: %v", err)
+		return nil, fmt.Errorf("error extracting JSON data: %v", err)
 	}
 
-	return result, nil
+	// Parse the extracted JSON
+	var parsedData interface{}
+	if err := json.Unmarshal(jsonData, &parsedData); err != nil {
+		return nil, fmt.Errorf("error parsing calorie data: %v", err)
+	}
 
+	return parsedData, nil
+
+}
+
+func extractJSONFromText(text string) ([]byte, error) {
+	// Check if text contains markdown code block
+	re := regexp.MustCompile("```(?:json)?\\s*((?s:.+?))\\s*```")
+	matches := re.FindStringSubmatch(text)
+
+	if len(matches) > 1 {
+		// Extract content from code block
+		return []byte(strings.TrimSpace(matches[1])), nil
+	}
+
+	// If no code block, try to find JSON directly
+	// Look for text that starts with { and ends with }
+	re = regexp.MustCompile("(?s:\\{.+\\})")
+	matches = re.FindStringSubmatch(text)
+
+	if len(matches) > 0 {
+		return []byte(matches[0]), nil
+	}
+
+	return nil, fmt.Errorf("no valid JSON found in the response")
 }
