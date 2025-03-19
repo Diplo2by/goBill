@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/joho/godotenv"
@@ -22,8 +28,75 @@ func main() {
 	app.Get("/", func(c fiber.Ctx) error {
 		return c.SendString("Hello Fibre")
 	})
+	app.Post("/api/analyze-bill", analyzeBillHandler)
 
 	log.Fatal(app.Listen(":8080"))
+
+}
+
+func analyzeBillHandler(c fiber.Ctx) error {
+	apikey := os.Getenv("GEMINI_API_KEY")
+
+	// load API Key
+	if apikey == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Gemini API Key error",
+		})
+	}
+
+	// get uploaded image
+
+	file, err := c.FormFile("image")
+
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Error retrieving image file",
+		})
+	}
+
+	fileHandle, err := file.Open()
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Failed to open image file",
+		})
+	}
+
+	defer fileHandle.Close()
+
+	fileBytes, err := io.ReadAll(fileHandle)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Failed to read image file",
+		})
+	}
+
+	// Convert to base64
+	encodedImage := base64.StdEncoding.EncodeToString(fileBytes)
+
+	// get image type
+	contentType := file.Header["Content-Type"][0]
+
+	// make Gemini API call
+	geminiResponse, err := callGeminiApi(encodedImage, apikey, contentType)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Error calling Gemini API: %v", err),
+		})
+	}
+
+	return c.JSON(BillAnalysisResponse{
+		Success: true,
+		Data:    geminiResponse,
+	})
+
+}
 
 type BillAnalysisResponse struct {
 	Success bool                   `json:"success"`
