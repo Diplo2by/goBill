@@ -48,4 +48,59 @@ type InlineData struct {
 	MimeType string `json:"mime_type"`
 	Data     string `json:"data"`
 }
+
+func callGeminiApi(imageBytes, apiKey, mimeType string) (map[string]interface{}, error) {
+	requestBody := GeminiRequest{
+		Contents: []Content{
+			{
+				Parts: []Part{
+					{
+						Text: "Extract all food items from this restaurant bill and provide their estimated calorie counts. Format the response as a JSON object with food items as keys and calorie counts as values.",
+					},
+					{
+						InlineData: &InlineData{
+							MimeType: mimeType,
+							Data:     imageBytes,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling request: %v", err)
+	}
+
+	// send api request
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", apiKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respbody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("gemini returned an error : %v", err)
+	}
+
+	var result map[string]interface{}
+	err = json.Unmarshal(respbody, &result)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing response: %v", err)
+	}
+
+	return result, nil
+
 }
