@@ -25,4 +25,21 @@ func main() {
 
 	log.Fatal(app.Listen(":8080"))
 
+type GeminiRequest struct {
+	Contents []Content `json:"contents"`
+}
+
+type Content struct {
+	Parts []Part `json:"parts"`
+}
+
+type Part struct {
+	Text       string      `json:"text,omitempty"`
+	InlineData *InlineData `json:"inline_data,omitempty"`
+}
+
+type InlineData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"`
+}
 }
