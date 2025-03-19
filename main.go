@@ -25,6 +25,12 @@ func main() {
 
 	log.Fatal(app.Listen(":8080"))
 
+type BillAnalysisResponse struct {
+	Success bool                   `json:"success"`
+	Data    map[string]interface{} `json:"data,omitempty"`
+	Error   string                 `json:"error,omitempty"`
+}
+
 type GeminiRequest struct {
 	Contents []Content `json:"contents"`
 }
