@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -24,11 +23,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 func handler() http.HandlerFunc {
 
-	err := godotenv.Load()
-
-	if err != nil {
-		log.Fatal("error loading env file")
-	}
+	_ = godotenv.Load()
 
 	app := fiber.New()
 
@@ -37,8 +32,8 @@ func handler() http.HandlerFunc {
 	})
 	app.Post("/api/analyze-bill", analyzeBillHandler)
 
-	log.Fatal(app.Listen(":8080"))
-	log.Printf("Server starting on port 8080...\n")
+	// log.Fatal(app.Listen(":8080"))
+	// log.Printf("Server starting on port 8080...\n")
 
 	return adaptor.FiberApp(app)
 }
