@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"bytes"
@@ -13,11 +13,16 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/joho/godotenv"
 )
 
-func main() {
-	fmt.Println("Hey go!")
+func Handler(w http.ResponseWriter, r *http.Request) {
+	r.RequestURI = r.URL.String()
+	handler().ServeHTTP(w, r)
+}
+
+func handler() http.HandlerFunc {
 
 	err := godotenv.Load()
 
@@ -34,6 +39,8 @@ func main() {
 
 	log.Fatal(app.Listen(":8080"))
 	log.Printf("Server starting on port 8080...\n")
+
+	return adaptor.FiberApp(app)
 }
 
 func analyzeBillHandler(c fiber.Ctx) error {
