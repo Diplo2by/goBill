@@ -142,7 +142,7 @@ func callGeminiApi(imageBytes, apiKey, mimeType string) (interface{}, error) {
 			{
 				Parts: []Part{
 					{
-						Text: "Extract all food items from this restaurant bill and provide their estimated calorie counts. Format the response as a JSON object with food items as keys and calorie counts as values.",
+						Text: "Extract all food items from this restaurant bill and provide their estimated calorie counts. Format the response as a JSON object with food items as keys and calorie counts as values do not provide range of values please provide only 1 value for each food item.",
 					},
 					{
 						InlineData: &InlineData{
