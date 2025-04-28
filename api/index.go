@@ -16,6 +16,9 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const bill = "BILL"
+const plate = "PLATE"
+
 func Handler(w http.ResponseWriter, r *http.Request) {
 	r.RequestURI = r.URL.String()
 	handler().ServeHTTP(w, r)
@@ -31,11 +34,75 @@ func handler() http.HandlerFunc {
 		return c.SendString("Hello Fibre")
 	})
 	app.Post("/api/analyze-bill", analyzeBillHandler)
+	app.Post("/api/analyze-plate", analyzePlateHandler)
 
 	// log.Fatal(app.Listen(":8080"))
 	// log.Printf("Server starting on port 8080...\n")
 
 	return adaptor.FiberApp(app)
+}
+
+func analyzePlateHandler(c fiber.Ctx) error {
+	apikey := os.Getenv("GEMINI_API_KEY")
+
+	// load API Key
+	if apikey == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Gemini API Key error",
+		})
+	}
+
+	// get uploaded image
+
+	file, err := c.FormFile("image")
+
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Error retrieving image file",
+		})
+	}
+
+	fileHandle, err := file.Open()
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Failed to open image file",
+		})
+	}
+
+	defer fileHandle.Close()
+
+	fileBytes, err := io.ReadAll(fileHandle)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   "Failed to read image file",
+		})
+	}
+
+	// Convert to base64
+	encodedImage := base64.StdEncoding.EncodeToString(fileBytes)
+
+	// get image type
+	contentType := file.Header["Content-Type"][0]
+
+	// make Gemini API call
+	geminiResponse, err := callGeminiApi(encodedImage, apikey, contentType, plate)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Error calling Gemini API: %v", err),
+		})
+	}
+
+	return c.JSON(BillAnalysisResponse{
+		Success: true,
+		Data:    geminiResponse,
+	})
 }
 
 func analyzeBillHandler(c fiber.Ctx) error {
@@ -86,7 +153,7 @@ func analyzeBillHandler(c fiber.Ctx) error {
 	contentType := file.Header["Content-Type"][0]
 
 	// make Gemini API call
-	geminiResponse, err := callGeminiApi(encodedImage, apikey, contentType)
+	geminiResponse, err := callGeminiApi(encodedImage, apikey, contentType, bill)
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(BillAnalysisResponse{
@@ -136,13 +203,22 @@ type GeminiResponse struct {
 	} `json:"candidates"`
 }
 
-func callGeminiApi(imageBytes, apiKey, mimeType string) (interface{}, error) {
+func callGeminiApi(imageBytes, apiKey, mimeType string, imgType string) (map[string]int, error) {
+
+	prompt := ""
+
+	if imgType == bill {
+		prompt = "Extract all food items from this restaurant bill and provide their estimated calorie counts. Format the response as a JSON object with food items as keys and calorie counts as values do not provide range of values please provide only 1 value for each food item."
+	} else {
+		prompt = "Recognise the food items in this image and provide an estimated calorie count Format the response as a JSON object with food items as keys and calorie counts as values do not provide range of values please provide only 1 value for each food item."
+	}
+
 	requestBody := GeminiRequest{
 		Contents: []Content{
 			{
 				Parts: []Part{
 					{
-						Text: "Extract all food items from this restaurant bill and provide their estimated calorie counts. Format the response as a JSON object with food items as keys and calorie counts as values do not provide range of values please provide only 1 value for each food item.",
+						Text: prompt,
 					},
 					{
 						InlineData: &InlineData{
@@ -161,7 +237,7 @@ func callGeminiApi(imageBytes, apiKey, mimeType string) (interface{}, error) {
 	}
 
 	// send api request
-	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
+	url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent"
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %v", err)
@@ -196,7 +272,7 @@ func callGeminiApi(imageBytes, apiKey, mimeType string) (interface{}, error) {
 	}
 
 	// Parse the extracted JSON
-	var parsedData interface{}
+	var parsedData map[string]int
 	if err := json.Unmarshal(jsonData, &parsedData); err != nil {
 		return nil, fmt.Errorf("error parsing calorie data: %v", err)
 	}
